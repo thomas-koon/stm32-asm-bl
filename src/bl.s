@@ -10,6 +10,13 @@
 .equ GPIOA_ODR, 0x40020014
 .equ LED_PIN, 5  /* PA5 */
 
+.equ FLASH_BASE_ADDR, 0x40023C00
+.equ FLASH_KEYR_OFFSET,    0x04
+.equ FLASH_KEY1, 0x45670123
+.equ FLASH_KEY2, 0xCDEF89AB
+.equ FLASH_CR_OFFSET, 0x10
+.equ FLASH_CR_LOCK_BIT, 0x80000000
+
 .section  .isr_vector,"a",%progbits
 .type  g_pfnVectors, %object
 .size  g_pfnVectors, .-g_pfnVectors
@@ -22,6 +29,11 @@ g_pfnVectors:
 .weak Reset_Handler
 .type Reset_Handler, %function
 Reset_Handler:
+
+    bl Unlock_Flash
+    bl Lock_Flash
+    bl Unlock_Flash
+    bl Lock_Flash
 
     /* jump to application: set MSP to app's vector table */
     /* commenting this part out should have LD2 (green right side LED) stay on */
@@ -52,3 +64,35 @@ Reset_Handler:
     /* r0 contains the address GPIOA's ODR, which controls pin states*/
     str r1, [r0]           /* Turn on LED (set PA5) */
     
+Unlock_Flash:
+    /* Load the base address of the FLASH registers */
+    ldr     r0, =FLASH_BASE_ADDR
+    /* Load the address of the FLASH_KEYR register */ 
+    add     r0, r0, #FLASH_KEYR_OFFSET
+    
+    /* Write the first key to the FLASH_KEYR */ 
+    LDR     r1, =FLASH_KEY1
+    STR     r1, [r0]
+    
+    /* Write the second key to the FLASH_KEYR */
+    LDR     r1, =FLASH_KEY2
+    STR     r1, [r0]
+    
+    /* Return from the function */
+    bx      lr
+
+Lock_Flash:
+    /* Load the base address of the FLASH registers */
+    ldr     r0, =FLASH_BASE_ADDR
+    /* Load the address of the FLASH_CR register */
+    add     r0, r0, #FLASH_CR_OFFSET
+    
+    /* Read the current value of the FLASH_CR register */
+    ldr     r1, [r0]
+    /* Set the LOCK bit */
+    orr     r1, r1, #FLASH_CR_LOCK_BIT
+    /* Write the modified value back to the FLASH_CR register */
+    str     r1, [r0]
+    
+    /* Return from the function */
+    bx      lr

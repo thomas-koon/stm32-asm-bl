@@ -48,6 +48,8 @@ Reset_Handler:
 
     bl Erase_Boot
 
+After_Erase: 
+
     bl Lock_Flash
 
     /* jump to application: set MSP to app's vector table */
@@ -80,7 +82,7 @@ Reset_Handler:
     str r1, [r0]           /* Turn on LED (set PA5) */
     
 Unlock_Flash:
-    /* Load the address of the FLASH_KEYR register */
+    /* Load the address of the FLASH_KEYR register */ 
     ldr     r0, =FLASH_KEYR_ADDR
     
     /* Write the first key to the FLASH_KEYR */ 
@@ -110,17 +112,17 @@ Lock_Flash:
 
 Erase_Boot:
     /* erase Sectors 1, 2, 3, 4, 5 */
-    mov r0, #(1 << 3)     /* Sector 1 (aligned to bits 6:3) */
+    mov r0, 0x8     /* Sector 1 (aligned to bits 6:3) */
     bl Erase_Sector
-    mov r0, #(2 << 3)     /* Sector 2 (aligned to bits 6:3) */
+    mov r0, 0x10     /* Sector 2 (aligned to bits 6:3) */
     bl Erase_Sector
-    mov r0, #(3 << 3)     /* Sector 3 (aligned to bits 6:3) */
+    mov r0, 0x18     /* Sector 3 (aligned to bits 6:3) */
     bl Erase_Sector
-    mov r0, #(4 << 3)     /* Sector 4 (aligned to bits 6:3) */
+    mov r0, 0x20     /* Sector 4 (aligned to bits 6:3) */
     bl Erase_Sector
-    mov r0, #(5 << 3)     /* Sector 5 (aligned to bits 6:3) */
+    mov r0, 0x28     /* Sector 5 (aligned to bits 6:3) */
     bl Erase_Sector
-    bx lr          /* Return from function */
+    bl After_Erase
 
 Erase_Sector:
     /* Input: r0 = sector number */

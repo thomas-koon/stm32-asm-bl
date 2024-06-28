@@ -1,1 +1,1 @@
-making stm32 bootloader in assembly
+I made STM32 bootloader in assembly

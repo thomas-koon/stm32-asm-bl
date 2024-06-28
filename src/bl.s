@@ -25,6 +25,9 @@
 
 .equ FLASH_SR_BSY, 0x00010000
 
+.equ FLASH_CR_PSIZE_MASK, 0x00000300
+.equ FLASH_CR_PSIZE_32, 0x200
+
 .equ BOOT_SECTOR_ADDRESS, 0x8004000
 .equ UPDATE_SECTOR_ADDRESS, 0x8040000
 .equ UPDATE_SECTOR_SIZE, 0x3E800
@@ -50,13 +53,24 @@ Reset_Handler:
 
 After_Erase: 
 
+    /* set PSIZE before programming flash */
+    ldr     r0, =FLASH_CR_ADDR
+    ldr     r1, [r0]
+    bic r1, r1, #FLASH_CR_PSIZE_MASK    /* Clear previous PSIZE bits */
+    orr r1, r1, #FLASH_CR_PSIZE_32      /* Set PSIZE to 32-bit */
+    str r1, [r0]
+
+    bl Copy_Update
+
     bl Lock_Flash
 
-    /* jump to application: set MSP to app's vector table */
+After_Update:
+
+    /* Jump to application: set MSP to app's vector table */
     /* commenting this part out should have LD2 (green right side LED) stay on */
-    // ldr r13, =0x08004000     /* boot MSP */
-    // ldr r0, =0x080048a5      /* reset handler address (verified in gdb disas)*/  
-    // bx r0     /* boot reset handler */
+    ldr r13, =0x08004000     /* boot MSP */
+    ldr r0, =0x080048a5      /* reset handler address (verified in gdb disas)*/  
+    bx r0     /* boot reset handler */
 
     /* Enable GPIOA clock */
     ldr r0, =RCC_AHB1ENR  /* Load RCC_AHB1ENR address into r0 */
@@ -68,7 +82,7 @@ After_Erase:
     /* Configure PA5 as output */
     ldr r0, =GPIOA_MODER   /* Load GPIOA_MODER address into r0 */
     ldr r1, [r0]           /* Read GPIOA_MODER value into r1 */
-    /* we want to OR (1 << LED_PIN*2) with MODER[*/
+    /* we want to OR (1 << LED_PIN*2) with MODER*/
     mov r2, #1
     lsl r2, r2, #10 
     orr r1, r1, r2         /* Set GPIO pin based on LED_PIN */
@@ -155,7 +169,7 @@ Copy_Update:
 
 Copy_Loop:
     cmp r4, #0      /* If update sector size copied */
-    bx lr
+    beq After_Update
 
     ldr r1, [r2]    /* Read value of update sector address */
 

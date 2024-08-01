@@ -267,6 +267,7 @@ Write_To_Flash:
     sub r5, r5, #4
     b Check_and_Set_Update_Progress
 
+// for simulating a power fail
 System_Reset:
     /* Load address of SCB AIRCR reg */
     LDR R0, =SCB_AIRCR

@@ -32,6 +32,12 @@
 .equ UPDATE_SECTOR_ADDRESS, 0x8040000
 .equ UPDATE_SECTOR_SIZE, 0x3E800
 
+/* For continuing updates after power loss */
+.equ UPDATE_FLAG_ADDRESS, 0x08003FF0  /* Address to store the update flag, if need to continue update */
+.equ UPDATE_SECTOR_ADDRESS_FLAG, 0x08003FF4  /* Address to store the current update sector address */
+.equ BOOT_SECTOR_ADDRESS_FLAG, 0x08003FF8  /* Address to store the current boot sector address */
+.equ UPDATE_PROGRESS_FLAG, 0x08003FFC  /* Address to store how much data has been copied so far */
+
 .section  .isr_vector,"a",%progbits
 .type  g_pfnVectors, %object
 .size  g_pfnVectors, .-g_pfnVectors
@@ -45,8 +51,13 @@ g_pfnVectors:
 .type Reset_Handler, %function
 Reset_Handler:
 
-    bl Unlock_Flash
-    bl Lock_Flash
+    /* Check if continue update flag is set */
+    ldr r0, =UPDATE_FLAG_ADDRESS
+    ldr r1, [r0]
+    cmp r1, #0xFFFFFFFF
+    bne Continue_Update
+
+    /* If continue update flag not set: erase boot */
     bl Unlock_Flash
 
     bl Erase_Boot
@@ -60,17 +71,31 @@ After_Erase:
     orr r1, r1, #FLASH_CR_PSIZE_32      /* Set PSIZE to 32-bit */
     str r1, [r0]
 
-    bl Copy_Update
+    bl Set_Initial_Update_Progress
 
     bl Lock_Flash
 
 After_Update:
+
+    /* Clear update flag */
+    ldr r0, =UPDATE_FLAG_ADDRESS
+    mov r1, #0xFFFFFFFF
+    ldr r2, =FLASH_CR_ADDR /* Input: r0 = address, r1 = value */
+
+    /* Clear update progress flag */
+    ldr r0, =UPDATE_PROGRESS_FLAG
+    mov r1, #0xFFFFFFFF
+    ldr r2, =FLASH_CR_ADDR /* Input: r0 = address, r1 = value */
+
 
     /* Jump to application: set MSP to app's vector table */
     /* commenting this part out should have LD2 (green right side LED) stay on */
     ldr r13, =0x08004000     /* boot MSP */
     ldr r0, =0x080048a5      /* reset handler address (verified in gdb disas)*/  
     bx r0     /* boot reset handler */
+
+    // If jump failed:
+    // this will turn on the green LED, indicating the app wasn't jumped to
 
     /* Enable GPIOA clock */
     ldr r0, =RCC_AHB1ENR  /* Load RCC_AHB1ENR address into r0 */
@@ -88,12 +113,16 @@ After_Update:
     orr r1, r1, r2         /* Set GPIO pin based on LED_PIN */
     str r1, [r0]           /* Write back to GPIOA_MODER */
 
-    /* Blink LED */
+    /* turn on LED */
     ldr r0, =GPIOA_ODR     /* Load GPIOA_ODR address */
     mov r1, #(1 << LED_PIN) /* Prepare bit mask for PA5 */
 
     /* r0 contains the address GPIOA's ODR, which controls pin states*/
     str r1, [r0]           /* Turn on LED (set PA5) */
+
+/*
+* Flash unlocking and locking
+*/
     
 Unlock_Flash:
     /* Load the address of the FLASH_KEYR register */ 
@@ -123,6 +152,10 @@ Lock_Flash:
     
     /* Return from the function */
     bx      lr
+
+/*
+* Erasing the old image
+*/
 
 Erase_Boot:
     /* erase Sectors 1, 2, 3, 4, 5 */
@@ -154,44 +187,79 @@ Erase_Sector:
     orr r2, r2, #FLASH_CR_STRT
     str r2, [r1]
 
-Wait_Busy:
+Wait_Busy_Flash:
     /* Wait for the BSY bit to be cleared in FLASH_SR */
     ldr r1, =FLASH_SR_ADDR
     ldr r2, [r1]            /* Read the value of FLASH_SR */
     tst r2, #FLASH_SR_BSY   /* Test the BSY bit in FLASH_SR */
-    bne Wait_Busy
+    bne Wait_Busy_Flash
     bx lr
 
-Copy_Update:
-    ldr r2, =UPDATE_SECTOR_ADDRESS
-    ldr r3, =BOOT_SECTOR_ADDRESS
-    ldr r4, =UPDATE_SECTOR_SIZE
+/*
+* Writing the update to boot sector
+*/
 
-Copy_Loop:
-    cmp r4, #0      /* If update sector size copied */
+Continue_Update:
+    /* set PSIZE before programming flash */
+    ldr r0, =FLASH_CR_ADDR
+    ldr r1, [r0]
+    bic r1, r1, #FLASH_CR_PSIZE_MASK    /* Clear previous PSIZE bits */
+    orr r1, r1, #FLASH_CR_PSIZE_32      /* Set PSIZE to 32-bit */
+    str r1, [r0]
+
+   /* Check if update progress is stored */
+    ldr r0, =UPDATE_PROGRESS_FLAG
+    ldr r2, [r0]
+    cmp r2, #0xFFFFFFFF
+    beq Set_Initial_Update_Progress
+
+    /* Resume from the stored progress */
+    ldr r3, =UPDATE_SECTOR_ADDRESS
+    add r3, r3, r2
+    ldr r4, =BOOT_SECTOR_ADDRESS
+    add r4, r4, r2
+    ldr r5, =UPDATE_SECTOR_SIZE
+    sub r5, r5, r2
+    b Check_and_Set_Update_Progress   
+
+Set_Initial_Update_Progress:
+    ldr r3, =UPDATE_SECTOR_ADDRESS
+    ldr r4, =BOOT_SECTOR_ADDRESS
+    ldr r5, =UPDATE_SECTOR_SIZE
+    mov r2, #0
+
+Check_and_Set_Update_Progress:
+    cmp r5, #0      /* If update sector size copied */
     beq After_Update
 
-    ldr r1, [r2]    /* Read value of update sector address */
+    /* Store the current update progress */
+    ldr r0, =UPDATE_PROGRESS_FLAG
+    str r2, [r0]
+
+    ldr r1, [r3]    /* Read value of update sector address */
 
 Wait_Busy_Copy:
-    /* check BSY bit in FLASH_SR */
+    /* Check BSY bit in FLASH_SR */
     ldr r0, =FLASH_SR_ADDR
-    ldr r5, [r0]
-    tst r5, #FLASH_SR_BSY
+    ldr r6, [r0]
+    tst r6, #FLASH_SR_BSY
     bne Wait_Busy_Copy
 
-    /* set PG bit in FLASH_CR */
+Write_To_Flash:
+    /* Set PG bit in FLASH_CR */
     ldr r0, =FLASH_CR_ADDR
-    ldr r5, [r0]
-    orr r5, r5, #FLASH_CR_PG
-    str r5, [r0]
+    ldr r6, [r0]
+    orr r6, r6, #FLASH_CR_PG
+    str r6, [r0]
 
     /* Write the word to the boot sector */
     /* r1 is the value at current update sector address */
-    str r1, [r3]
+    str r1, [r4]
 
-    /* loop */
-    add r2, r2, #4
+    /* Loop */
     add r3, r3, #4
-    sub r4, r4, #4
-    b Copy_Loop
+    add r4, r4, #4
+    add r2, r2, #4
+    sub r5, r5, #4
+    b Check_and_Set_Update_Progress
+

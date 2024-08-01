@@ -268,17 +268,11 @@ Write_To_Flash:
     b Check_and_Set_Update_Progress
 
 System_Reset:
-    /* Load address of SCB AIRCR register */
+    /* Load address of SCB AIRCR reg */
     LDR R0, =SCB_AIRCR
 
-    /* Load value to write to AIRCR: VECTKEY | SYSRESETREQ */
+    /* Load value to write to AIRCR */
     LDR R1, =AIRCR_VECTKEY | AIRCR_SYSRESETREQ
 
-    /* Write the value to AIRCR to trigger system reset */
+    /* Write the value to AIRCR to trigger reset */
     STR R1, [R0]
-
-    /* Infinite loop to wait for reset (should never reach here) */
-    B .
-
-    /* Return from function (should never reach here) */
-    BX LR

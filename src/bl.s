@@ -32,9 +32,14 @@
 .equ UPDATE_SECTOR_ADDRESS, 0x8040000
 .equ UPDATE_SECTOR_SIZE, 0x3E800
 
+/* For system resets, simulating power fail */
+.equ SCB_AIRCR, 0xE000ED0C
+.equ AIRCR_VECTKEY, 0x05FA0000
+.equ AIRCR_SYSRESETREQ, 0x04
+
 /* For continuing updates after power loss */
 .equ UPDATE_FLAG_ADDRESS, 0x08003FF0  /* Address to store the update flag, if need to continue update */
-.equ UPDATE_PROGRESS_FLAG, 0x08003FFC  /* Address to store how much data has been copied so far */
+.equ UPDATE_PROGRESS, 0x08003FFC  /* Address to store how much data has been copied so far */
 
 .section  .isr_vector,"a",%progbits
 .type  g_pfnVectors, %object
@@ -49,6 +54,9 @@ g_pfnVectors:
 .type Reset_Handler, %function
 Reset_Handler:
 
+    
+    bl Unlock_Flash
+
     /* Check if continue update flag is set */
     ldr r0, =UPDATE_FLAG_ADDRESS
     ldr r1, [r0]
@@ -56,8 +64,6 @@ Reset_Handler:
     bne Continue_Update
 
     /* If continue update flag not set: erase boot */
-    bl Unlock_Flash
-
     bl Erase_Boot
 
 After_Erase: 
@@ -81,7 +87,7 @@ After_Update:
     ldr r2, =FLASH_CR_ADDR /* Input: r0 = address, r1 = value */
 
     /* Clear update progress flag */
-    ldr r0, =UPDATE_PROGRESS_FLAG
+    ldr r0, =UPDATE_PROGRESS
     mov r1, #0xFFFFFFFF
     ldr r2, =FLASH_CR_ADDR /* Input: r0 = address, r1 = value */
 
@@ -206,7 +212,7 @@ Continue_Update:
     str r1, [r0]
 
    /* Check if update progress is stored */
-    ldr r0, =UPDATE_PROGRESS_FLAG
+    ldr r0, =UPDATE_PROGRESS
     ldr r2, [r0]
     cmp r2, #0xFFFFFFFF
     beq Set_Initial_Update_Progress
@@ -231,7 +237,7 @@ Check_and_Set_Update_Progress:
     beq After_Update
 
     /* Store the current update progress */
-    ldr r0, =UPDATE_PROGRESS_FLAG
+    ldr r0, =UPDATE_PROGRESS
     str r2, [r0]
 
     ldr r1, [r3]    /* Read value of update sector address */
@@ -261,3 +267,18 @@ Write_To_Flash:
     sub r5, r5, #4
     b Check_and_Set_Update_Progress
 
+System_Reset:
+    /* Load address of SCB AIRCR register */
+    LDR R0, =SCB_AIRCR
+
+    /* Load value to write to AIRCR: VECTKEY | SYSRESETREQ */
+    LDR R1, =AIRCR_VECTKEY | AIRCR_SYSRESETREQ
+
+    /* Write the value to AIRCR to trigger system reset */
+    STR R1, [R0]
+
+    /* Infinite loop to wait for reset (should never reach here) */
+    B .
+
+    /* Return from function (should never reach here) */
+    BX LR

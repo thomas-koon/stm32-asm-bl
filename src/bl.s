@@ -34,8 +34,6 @@
 
 /* For continuing updates after power loss */
 .equ UPDATE_FLAG_ADDRESS, 0x08003FF0  /* Address to store the update flag, if need to continue update */
-.equ UPDATE_SECTOR_ADDRESS_FLAG, 0x08003FF4  /* Address to store the current update sector address */
-.equ BOOT_SECTOR_ADDRESS_FLAG, 0x08003FF8  /* Address to store the current boot sector address */
 .equ UPDATE_PROGRESS_FLAG, 0x08003FFC  /* Address to store how much data has been copied so far */
 
 .section  .isr_vector,"a",%progbits
